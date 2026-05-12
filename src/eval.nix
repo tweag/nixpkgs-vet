@@ -60,6 +60,8 @@ let
         {
           AttributeSet = {
             is_derivation = pkgs.lib.isDerivation value;
+            has_maintainers = value.meta.maintainers or [ ] != [ ];
+            has_no_maintainers_but_dependents = value.meta.hasNoMaintainersButDependents or false;
             strict_deps = value.strictDeps or false;
             structured_attrs = value.__structuredAttrs or false;
             definition_variant =

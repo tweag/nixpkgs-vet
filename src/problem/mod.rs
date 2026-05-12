@@ -45,6 +45,10 @@ pub mod npv_167;
 
 pub mod npv_170;
 
+pub mod npv_180;
+pub mod npv_181;
+pub mod npv_182;
+
 const WIKI_BASE_URL: &str = "https://github.com/NixOS/nixpkgs-vet/wiki";
 
 #[derive(Clone, EnumFrom)]
@@ -165,6 +169,15 @@ pub enum Problem {
 
     /// NPV-170: nix files should not contain useless escapes
     NixFileContainsUselessEscape(npv_170::NixFileContainsUselessEscape),
+
+    /// NPV-180: meta.hasNoMaintainersButDependents should be set
+    DependentsAttrsShouldBeSet(npv_180::DependentsAttrsShouldBeSet),
+
+    /// NPV-181: meta.hasNoMaintainersButDependents should not be set when there are maintainers
+    DependentsAttrsSetWithMaintainers(npv_181::DependentsAttrsSetWithMaintainers),
+
+    /// NPV-182: meta.hasNoMaintainersButDependents should not be set when there are no dependents
+    DependentsAttrsSetWithoutDependents(npv_182::DependentsAttrsSetWithoutDependents),
 }
 
 impl Problem {
@@ -208,6 +221,9 @@ impl Problem {
             Self::NewTopLevelPackageMustEnableStructuredAttrs(..) => "NPV-166",
             Self::TopLevelPackageDisabledStructuredAttrs(..) => "NPV-167",
             Self::NixFileContainsUselessEscape(..) => "NPV-170",
+            Self::DependentsAttrsShouldBeSet(..) => "NPV-180",
+            Self::DependentsAttrsSetWithMaintainers(..) => "NPV-181",
+            Self::DependentsAttrsSetWithoutDependents(..) => "NPV-182",
         }
     }
 
@@ -257,6 +273,9 @@ impl fmt::Display for Problem {
             Self::NewTopLevelPackageMustEnableStructuredAttrs(inner) => inner.fmt(f),
             Self::TopLevelPackageDisabledStructuredAttrs(inner) => inner.fmt(f),
             Self::NixFileContainsUselessEscape(inner) => inner.fmt(f),
+            Self::DependentsAttrsShouldBeSet(inner) => inner.fmt(f),
+            Self::DependentsAttrsSetWithMaintainers(inner) => inner.fmt(f),
+            Self::DependentsAttrsSetWithoutDependents(inner) => inner.fmt(f),
         }
     }
 }

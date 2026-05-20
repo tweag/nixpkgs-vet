@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::fs::File;
 use crate::leaf;
 use crate::validation::Validation;
 use relative_path::RelativePath;
@@ -46,6 +48,9 @@ pub fn check_files(
             Ok(result.map(|()| ratchet::File {}))
         })?;
 
+    let mut file = File::create("idents_to_files")?;
+    file.write_all(format!("{:#?}", idents_to_files).as_bytes())?;
+
     Ok(FileCheckResult {
         idents_to_files,
         file_ratchets,
@@ -66,7 +71,7 @@ fn process_nix_files(
         files
     };
 
-    let results = ResultIteratorExt::collect_vec(files.into_iter().map(|path| {
+    let results = ResultIteratorExt::collect_vec_res(files.into_iter().map(|path| {
         // Get the (optionally-cached) parsed Nix file
         let nix_file = nix_file_store.get(&path.to_path(nixpkgs_path))?;
         let result = f(&path, nix_file)?;

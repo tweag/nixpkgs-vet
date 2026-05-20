@@ -1,3 +1,7 @@
+use relative_path::PathExt;
+use itertools::Itertools;
+use std::io::Write;
+use std::fs::File;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -22,7 +26,7 @@ use crate::{location, ratchet};
 const EVAL_NIX: &[u8] = include_bytes!("eval.nix");
 
 /// Attribute set of this structure is returned by `./eval.nix`
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 enum Attribute {
     /// An attribute that should be defined via `pkgs/by-name`.
     ByName(ByNameAttribute),
@@ -30,21 +34,21 @@ enum Attribute {
     NonByName(NonByNameAttribute),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 enum NonByNameAttribute {
     /// The attribute doesn't evaluate.
     EvalFailure,
     EvalSuccess(AttributeInfo),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 enum ByNameAttribute {
     /// The attribute doesn't exist at all.
     Missing,
     Existing(AttributeInfo),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct AttributeInfo {
     /// The location of the attribute as returned by `builtins.unsafeGetAttrPos`.
     location: Option<Location>,
@@ -75,7 +79,7 @@ impl Location {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub enum AttributeVariant {
     /// The attribute is not an attribute set, so we're limited in the amount of information we can
     /// get from it. Since all derivations are attribute sets, it's obviously not a derivation.
@@ -93,10 +97,11 @@ pub enum AttributeVariant {
         structured_attrs: bool,
         /// The type of `callPackage` used.
         definition_variant: DefinitionVariant,
+        meta_position: Option<String>,
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub enum DefinitionVariant {
     /// An automatic definition by the `pkgs/by-name` overlay, though it's detected using the
     /// internal `_internalCallByNamePackageFile` attribute, which can in theory also be used by
@@ -246,6 +251,9 @@ pub fn check_values(
             )
         })?;
 
+    let mut file = File::create("attributes")?;
+    file.write_all(format!("{:#?}", attributes).as_bytes())?;
+
     let check_result = validation::sequence(
         attributes
             .into_iter()
@@ -271,7 +279,7 @@ pub fn check_values(
                 };
                 Ok::<_, anyhow::Error>(check_result.map(|value| (attribute_path.clone(), value)))
             })
-            .collect_vec()?,
+            .collect_vec_res()?,
     );
 
     Ok(check_result.map(|elems| elems.into_iter().collect()))
@@ -320,6 +328,7 @@ fn by_name(
                     definition_variant,
                     has_maintainers,
                     has_no_maintainers_but_dependents,
+                    meta_position,
                 },
             location,
         }) => {
@@ -597,6 +606,7 @@ fn handle_non_by_name_attribute(
                     definition_variant,
                     has_maintainers,
                     has_no_maintainers_but_dependents,
+                    meta_position,
                 },
             location,
         }) => {
@@ -682,26 +692,38 @@ fn handle_non_by_name_attribute(
                 Success(NonApplicable)
             };
 
-            let leaf_result = if let Some((
-                _location,
-                Some(CallPackageArgumentInfo {
-                    relative_path: Some(rel_path),
-                    empty_arg: _,
-                }),
-            )) = parsed_definition.as_ref()
+            // TODO: What if both are available?, or what if unsafeGetAttrPos is misleading like for
+            // cudaPackages?
+            //let maybe_package_file = if let Some((
+            //    _location,
+            //    Some(CallPackageArgumentInfo {
+            //        relative_path: Some(rel_path),
+            //        empty_arg: _,
+            //    }),
+            //)) = parsed_definition.as_ref() {
+            //    Some(if rel_path.to_logical_path(nixpkgs_path).is_dir() {
+            //        rel_path.join("default.nix")
+            //    } else {
+            //        rel_path.clone()
+            //    })
+            let maybe_package_file = if let Some(meta_pos) = meta_position {
+                // `meta.position` is "${file}:${line}"
+                let only_file = meta_pos.split(':').dropping_back(1).join(":");
+                let rel_path = PathBuf::from(only_file).relative_to(nixpkgs_path)?;
+                Some(rel_path)
+            } else {
+                None
+            };
+
+            let leaf_result = if let Some(package_file) = maybe_package_file
             {
-                let file = if rel_path.to_logical_path(nixpkgs_path).is_dir() {
-                    &rel_path.join("default.nix")
-                } else {
-                    rel_path
-                };
                 leaf_result(
                     has_maintainers,
                     has_no_maintainers_but_dependents,
                     attribute_path,
                     idents_to_files,
-                    file,
-                    file,
+                    &package_file,
+                    &package_file,
                 )
             } else {
                 Success(())

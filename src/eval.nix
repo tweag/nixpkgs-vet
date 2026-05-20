@@ -101,6 +101,9 @@ let
             strict_deps = value.strictDeps or false;
             structured_attrs = value.__structuredAttrs or false;
             meta_position = value.meta.position or null;
+            is_generated = value.meta.isGenerated or false;
+            pname = value.pname or null;
+            name = value.name or null;
             definition_variant =
               if !value ? _callPackageVariant then
                 { ManualDefinition.is_semantic_call_package = false; }

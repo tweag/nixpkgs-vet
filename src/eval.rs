@@ -16,7 +16,7 @@ use crate::NixFileStore;
 use crate::nix_file::CallPackageArgumentInfo;
 use crate::problem::{
     npv_100, npv_101, npv_102, npv_103, npv_104, npv_105, npv_106, npv_107, npv_108, npv_120,
-    npv_180, npv_181, npv_182,
+    npv_180, npv_181, npv_182, npv_183
 };
 use crate::ratchet::RatchetState::{Loose, Tight};
 use crate::structure::{self, BASE_SUBPATH};
@@ -89,7 +89,7 @@ pub enum AttributeVariant {
         /// Whether the attribute is a derivation (`lib.isDerivation`)
         is_derivation: bool,
         /// Whether the derivation has any maintainers
-        has_maintainers: bool,
+        missing_maintainers: Option<bool>,
         /// Attribute that should correspond to whether the package has no maintainers but packages depending on it
         has_no_maintainers_but_dependents: bool,
         /// Whether the attribute evaluates with `strictDeps = true`.
@@ -99,7 +99,6 @@ pub enum AttributeVariant {
         /// The type of `callPackage` used.
         definition_variant: DefinitionVariant,
         meta_position: Option<String>,
-        is_generated: bool,
         pname: Option<String>,
         name: Option<String>,
     },
@@ -330,12 +329,11 @@ fn by_name(
                     strict_deps,
                     structured_attrs,
                     definition_variant,
-                    has_maintainers,
+                    missing_maintainers,
                     has_no_maintainers_but_dependents,
                     meta_position: _,
                     pname,
                     name,
-                    is_generated: _,
                 },
             location,
         }) => {
@@ -347,7 +345,7 @@ fn by_name(
             };
 
             let leaf_result = leaf_result(
-                has_maintainers,
+                missing_maintainers,
                 has_no_maintainers_but_dependents,
                 &vec![attribute_name.to_string()],
                 idents_to_files,
@@ -443,7 +441,7 @@ fn by_name(
 }
 
 fn leaf_result(
-    has_maintainers: bool,
+    missing_maintainers: Option<bool>,
     has_no_maintainers_but_dependents: bool,
     attribute_path: &Vec<String>,
     idents_to_files: &IdentIndex,
@@ -453,13 +451,19 @@ fn leaf_result(
     pname: &Option<String>,
     name: &Option<String>,
 ) -> validation::Validation<()> {
-    if has_maintainers {
-        if has_no_maintainers_but_dependents {
-            npv_181::DependentsAttrsSetWithMaintainers::new(attribute_path.clone()).into()
-        } else {
-            Success(())
-        }
-    } else {
+    match missing_maintainers {
+        // The package is not meant to have maintainers
+        // has_no_maintainers_but_dependents should not be set
+        None => {
+            if has_no_maintainers_but_dependents {
+                npv_183::DependentsAttrsSetWithoutNeed::new(attribute_path.clone()).into()
+            } else {
+                Success(())
+            }
+        },
+        // The package is meant to have maintainers but doesn't
+        // has_no_maintainers_but_dependents should match whether there are dependents
+        Some(true) => {
         let dependent_files: Vec<BTreeSet<RelativePathBuf>> = attribute_path
             .iter()
             .map(|attr| {
@@ -473,7 +477,7 @@ fn leaf_result(
                                     lines.iter().all(|line| from <= line && line < to)
                                 })
                         })
-                        .map(|(file, lines)| file)
+                        .map(|(file, _lines)| file)
                         .collect()
                 } else {
                     BTreeSet::new()
@@ -504,6 +508,16 @@ fn leaf_result(
                 Success(())
             }
         }
+        },
+        // The package is meant to have maintainers and does
+        // has_no_maintainers_but_dependents should not be set
+        Some(false) => {
+            if has_no_maintainers_but_dependents {
+                npv_181::DependentsAttrsSetWithMaintainers::new(attribute_path.clone()).into()
+            } else {
+                Success(())
+            }
+        },
     }
 }
 
@@ -625,12 +639,11 @@ fn handle_non_by_name_attribute(
                     //   can't distinguish from the above case, so we just need to ignore this one
                     //   too, even if that internal attribute should never be called manually.
                     definition_variant,
-                    has_maintainers,
+                    missing_maintainers,
                     has_no_maintainers_but_dependents,
                     meta_position,
                     pname,
                     name,
-                    is_generated,
                 },
             location,
         }) => {
@@ -732,7 +745,6 @@ fn handle_non_by_name_attribute(
             //    })
 
             let leaf_result = if let Some(ref meta_pos) = meta_position
-                && !is_generated
             {
                 // `meta.position` is "${file}:${line}"
                 let only_line: usize = meta_pos.split(':').last().unwrap().parse()?;
@@ -752,7 +764,7 @@ fn handle_non_by_name_attribute(
                     (Some(rel_path.clone()), BTreeMap::new())
                 };
                 leaf_result(
-                    has_maintainers,
+                    missing_maintainers,
                     has_no_maintainers_but_dependents,
                     attribute_path,
                     idents_to_files,

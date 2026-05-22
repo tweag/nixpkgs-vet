@@ -96,12 +96,11 @@ let
         {
           AttributeSet = {
             is_derivation = pkgs.lib.isDerivation value;
-            has_maintainers = value.meta.maintainers or [ ] != [ ];
+            missing_maintainers = value.meta.missingMaintainers or null;
             has_no_maintainers_but_dependents = value.meta.hasNoMaintainersButDependents or false;
             strict_deps = value.strictDeps or false;
             structured_attrs = value.__structuredAttrs or false;
             meta_position = value.meta.position or null;
-            is_generated = value.meta.isGenerated or false;
             pname = value.pname or null;
             name = value.name or null;
             definition_variant =
